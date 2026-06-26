@@ -18,7 +18,7 @@ export async function initDb() {
       is_stalled BOOLEAN DEFAULT FALSE,
       larvae_consensus TEXT,
       idea_status TEXT,
-      total_cv BIGINT,
+      total_cv BIGINT, manual_status TEXT,
       scored_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
