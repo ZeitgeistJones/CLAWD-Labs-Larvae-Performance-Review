@@ -72,7 +72,7 @@ export default async function Home() {
   const building = ideas.filter((i) => getEffectiveStatus(i) === "building");
   const stalled = ideas.filter((i) => getEffectiveStatus(i) === "stalled");
   const active = ideas.filter((i) => getEffectiveStatus(i) === "idea" && !i.archived);
-  const archived = ideas.filter((i) => getEffectiveStatus(i) === "archived" || (i.archived && !idea.verdict?.manual_status));
+  const archived = ideas.filter((i) => getEffectiveStatus(i) === "archived" || (i.archived && !i.verdict?.manual_status));
 
   const byCV = (a: Idea, b: Idea) => (b.total_cv || 0) - (a.total_cv || 0);
   shipped.sort((a, b) => (b.verdict?.score || 0) - (a.verdict?.score || 0));
