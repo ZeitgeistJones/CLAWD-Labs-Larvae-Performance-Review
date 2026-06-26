@@ -15,11 +15,13 @@ interface Verdict {
   stall_reason: string | null;
   stall_confidence: string | null;
   linked_repo: string | null;
+  linked_repo_override: string | null;
   repo_url: string | null;
   last_commit_days: number | null;
   is_stalled: boolean;
   larvae_consensus: string | null;
   idea_status: string;
+  manual_status: string | null;
   total_cv: number;
   updated_at: string;
 }
@@ -109,6 +111,7 @@ export default function IdeaPage({
     ideaData?.aggregated_opinion_short ||
     ideaData?.aggregated_opinion;
   const totalCV = verdict?.total_cv || ideaData?.total_cv || 0;
+  const repoName = verdict?.linked_repo_override || verdict?.linked_repo;
 
   return (
     <>
@@ -129,14 +132,19 @@ export default function IdeaPage({
           <h1 className="detail-title">{title}</h1>
           <div className="detail-meta">
             <span className={`badge badge-${verdict?.is_stalled ? "stalled" : status}`}>
-              {verdict?.is_stalled ? "⚠ Stalled" : status === "shipped" ? "✓ Shipped" : status === "building" ? "◎ Building" : status === "rejected" ? "✕ Rejected" : "○ Pending"}
+              {verdict?.is_stalled ? "⚠ Stalled" : status === "shipped" ? "✓ Shipped" : status === "building" ? "◎ Building" : status === "stalled" ? "⚠ Stalled" : status === "archived" ? "✕ Archived" : "○ Pending"}
             </span>
             <span className="cv-tag">
               <span style={{ color: "var(--clawd)" }}>{formatCV(totalCV)}</span> CV staked by community
             </span>
-            {verdict?.linked_repo && (
-              <a href={verdict.repo_url || "#"} target="_blank" rel="noopener noreferrer" className="repo-link">
-                ↗ {verdict.linked_repo}
+            {repoName && (
+              
+                href={verdict?.repo_url || `https://github.com/clawdbotatg/${repoName}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="repo-link"
+              >
+                ↗ {repoName}
               </a>
             )}
           </div>
@@ -195,23 +203,19 @@ export default function IdeaPage({
                 </div>
               )}
 
-              {!verdict?.score && status === "shipped" && (
+              {!verdict?.score && (
                 <div className="score-cta">
-                  <p className="score-cta-text">This build is marked shipped but hasn&apos;t been scored yet.</p>
-                  <button className="score-btn" onClick={runScore} disabled={scoring}>
-                    {scoring ? "Analyzing..." : "Run alignment analysis"}
-                  </button>
-                  {error && <p style={{ fontSize: 12, color: "var(--amber)", marginTop: 4 }}>{error}</p>}
-                </div>
-              )}
-
-              {!verdict && !loading && (
-                <div className="score-cta">
-                  <p className="score-cta-text">No analysis yet for this build.</p>
+                  <p className="score-cta-text">
+                    {status === "shipped"
+                      ? "This build is marked shipped but hasn't been scored yet."
+                      : "No analysis yet for this build."}
+                  </p>
                   <button className="score-btn" onClick={runScore} disabled={scoring}>
                     {scoring ? "Analyzing..." : "Analyze now"}
                   </button>
-                  {error && <p style={{ fontSize: 12, color: "var(--amber)", marginTop: 4 }}>{error}</p>}
+                  {error && (
+                    <p style={{ fontSize: 12, color: "var(--amber)", marginTop: 4 }}>{error}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -260,7 +264,7 @@ export default function IdeaPage({
                     </>
                   ) : (
                     <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-muted)", fontSize: 13 }}>
-                      {status === "shipped" ? "Score pending" : "Scored after ship"}
+                      Score pending
                     </div>
                   )}
                 </div>
@@ -280,11 +284,9 @@ export default function IdeaPage({
                 </div>
               )}
 
-              {verdict && (
-                <p style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.03em" }}>
-                  Analysis sourced from larv.ai public API and GitHub. Scoring is automated — not editorial.
-                </p>
-              )}
+              <p style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.03em" }}>
+                Analysis sourced from larv.ai public API and GitHub. Scoring is automated — not editorial.
+              </p>
             </div>
           </div>
         )}
