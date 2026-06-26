@@ -13,7 +13,7 @@ export async function GET() {
     ]);
 
     const verdictMap = new Map(
-      verdicts.map((v: { idea_id: number }) => [v.idea_id, v])
+      verdicts.map((v: any) => [v.idea_id, v])
     );
 
     const merged = ideas.map((idea: {
