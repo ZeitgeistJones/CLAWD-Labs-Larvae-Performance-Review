@@ -26,16 +26,17 @@ export async function POST(request: NextRequest) {
 
     await initDb();
 
-    if (!forceRescore) {
-      const existing = await getVerdict(ideaId);
-      if (existing) {
-        const daysSinceScore = daysSince(existing.updated_at);
-        if (daysSinceScore < RESCORE_AFTER_DAYS) {
-          return NextResponse.json({ verdict: existing, cached: true });
-        }
+    // Check for existing verdict
+    const existing = await getVerdict(ideaId);
+
+    if (!forceRescore && existing) {
+      const daysSinceScore = daysSince(existing.updated_at);
+      if (daysSinceScore < RESCORE_AFTER_DAYS) {
+        return NextResponse.json({ verdict: existing, cached: true });
       }
     }
 
+    // Fetch the idea from larv.ai
     const ideaData = await fetchLabsIdea(ideaId);
     const idea = ideaData.idea;
 
@@ -46,34 +47,39 @@ export async function POST(request: NextRequest) {
     const consensus = idea.aggregated_opinion || "";
     const consensusShort = idea.aggregated_opinion_short || "";
 
-    if (!consensus && idea.status !== "shipped") {
-      return NextResponse.json({
-        verdict: null,
-        reason: "No consensus yet — larvae haven't weighed in",
-      });
-    }
-
+    // Find matching GitHub repo
     const repos = await fetchClawdRepos();
-    let bestRepo = null;
-    let bestScore = 0;
+    let linkedRepo = null;
 
-    for (const repo of repos) {
-      const matchScore = fuzzyMatch(idea.title, repo.name);
-      const descMatch = idea.title
-        .toLowerCase()
-        .split(/\W+/)
-        .some(
-          (w: string) =>
-            w.length > 3 && repo.description?.toLowerCase().includes(w)
-        );
-      const totalScore = matchScore + (descMatch ? 0.3 : 0);
-      if (totalScore > bestScore) {
-        bestScore = totalScore;
-        bestRepo = repo;
+    // Check for manual repo override first
+    const repoOverride = existing?.linked_repo_override;
+
+    if (repoOverride) {
+      // Use the manually specified repo directly
+      linkedRepo = repos.find((r: any) => r.name === repoOverride) || null;
+    } else {
+      // Fall back to fuzzy matching
+      let bestScore = 0;
+      for (const repo of repos) {
+        const matchScore = fuzzyMatch(idea.title, repo.name);
+        const descMatch = idea.title
+          .toLowerCase()
+          .split(/\W+/)
+          .some(
+            (w: string) =>
+              w.length > 3 && repo.description?.toLowerCase().includes(w)
+          );
+        const totalScore = matchScore + (descMatch ? 0.3 : 0);
+        if (totalScore > bestScore) {
+          bestScore = totalScore;
+          linkedRepo = repo;
+        }
+      }
+      // Only use repo if reasonable match
+      if (linkedRepo && fuzzyMatch(idea.title, linkedRepo.name) <= 0.2) {
+        linkedRepo = null;
       }
     }
-
-    const linkedRepo = bestScore > 0.2 ? bestRepo : null;
 
     let commits: { commit: { message: string; committer: { date: string } } }[] = [];
     let readme = "";
@@ -97,13 +103,17 @@ export async function POST(request: NextRequest) {
       (c: { commit: { message: string } }) => c.commit.message.split("\n")[0]
     );
 
+    // Determine effective status
+    const effectiveStatus = existing?.manual_status || idea.status;
+
+    // Score alignment for shipped ideas
     let score = null;
     let primaryScore = null;
     let secondaryScore = null;
     let alignmentSummary = null;
     let qualityNotes = null;
 
-    if (idea.status === "shipped" && consensus) {
+    if (effectiveStatus === "shipped" && consensus) {
       const result = await scoreAlignment(
         idea.title,
         idea.description,
@@ -119,6 +129,7 @@ export async function POST(request: NextRequest) {
       qualityNotes = result.quality_notes;
     }
 
+    // Analyze stall reason if stalled and has consensus
     let stallReason = null;
     let stallConfidence = null;
 
@@ -146,10 +157,12 @@ export async function POST(request: NextRequest) {
       stall_confidence: stallConfidence,
       linked_repo: linkedRepo?.name || null,
       repo_url: linkedRepo?.html_url || null,
+      linked_repo_override: repoOverride || null,
       last_commit_days: lastCommitDays,
       is_stalled: isStalled,
       larvae_consensus: consensusShort || consensus?.slice(0, 500) || null,
       idea_status: idea.status,
+      manual_status: existing?.manual_status || null,
       total_cv: idea.total_cv || 0,
     };
 
