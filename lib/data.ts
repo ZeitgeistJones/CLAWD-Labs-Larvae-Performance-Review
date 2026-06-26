@@ -23,7 +23,7 @@ export async function fetchClawdRepos() {
   }
 
   const res = await fetch(
-    "https://api.github.com/orgs/clawdbotatg/repos?per_page=100&sort=updated",
+    "https://api.github.com/users/clawdbotatg/repos?per_page=100&sort=updated",
     { headers, next: { revalidate: 300 } }
   );
   if (!res.ok) throw new Error("Failed to fetch GitHub repos");
