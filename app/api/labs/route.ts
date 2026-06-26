@@ -16,17 +16,13 @@ export async function GET() {
       verdicts.map((v: any) => [v.idea_id, v])
     );
 
-    const merged = ideas.map((idea: {
-      id: number;
-      title: string;
-      status: string;
-      total_cv: number;
-      aggregated_opinion: string | null;
-      created_at: string;
-    }) => ({
+    const merged = ideas.map((idea: any) => ({
       ...idea,
       verdict: verdictMap.get(idea.id) || null,
     }));
+
+    // sort by total_cv descending
+    merged.sort((a: any, b: any) => (b.total_cv || 0) - (a.total_cv || 0));
 
     return NextResponse.json({ ideas: merged, stats });
   } catch (err) {
