@@ -1,0 +1,149 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+const STATUSES = ["idea", "building", "shipped", "stalled", "archived"];
+
+interface Idea {
+  id: number;
+  title: string;
+  total_cv: number;
+  archived: boolean;
+  verdict: {
+    manual_status: string | null;
+    score: number | null;
+    linked_repo: string | null;
+  } | null;
+}
+
+function formatCV(cv: number): string {
+  if (cv >= 1_000_000) return `${(cv / 1_000_000).toFixed(1)}M`;
+  if (cv >= 1_000) return `${(cv / 1_000).toFixed(0)}K`;
+  return String(cv);
+}
+
+export default function AdminPage() {
+  const [ideas, setIdeas] = useState<Idea[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<number | null>(null);
+  const [saved, setSaved] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("/api/labs")
+      .then((r) => r.json())
+      .then((data) => {
+        setIdeas(data.ideas || []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const setStatus = async (ideaId: number, manualStatus: string) => {
+    setSaving(ideaId);
+    try {
+      await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ideaId, manualStatus }),
+      });
+      setIdeas((prev) =>
+        prev.map((i) =>
+          i.id === ideaId
+            ? { ...i, verdict: { ...i.verdict, manual_status: manualStatus, score: i.verdict?.score ?? null, linked_repo: i.verdict?.linked_repo ?? null } }
+            : i
+        )
+      );
+      setSaved(ideaId);
+      setTimeout(() => setSaved(null), 2000);
+    } catch {
+      alert("Failed to save");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <>
+      <header style={{ borderBottom: "1px solid #242424", padding: "0 24px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0a0a0a", position: "sticky", top: 0, zIndex: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: "IBM Plex Mono, monospace", fontWeight: 600, fontSize: 13, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+          <div style={{ width: 28, height: 28, background: "#cc2b2b", borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🦞</div>
+          Admin
+        </div>
+        <a href="/" style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.06em" }}>← Back to dashboard</a>
+      </header>
+
+      <main style={{ maxWidth: 900, margin: "0 auto", padding: "32px 24px 80px" }}>
+        <div style={{ marginBottom: 32 }}>
+          <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Status Override</h1>
+          <p style={{ fontSize: 13, color: "#888" }}>Set the real status for each idea. This overrides the API status on the dashboard. Keep this URL private.</p>
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: "center", padding: 80, fontFamily: "IBM Plex Mono, monospace", fontSize: 12, color: "#555" }}>Loading...</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 1, background: "#242424", border: "1px solid #242424", borderRadius: 6, overflow: "hidden" }}>
+            {ideas.map((idea) => {
+              const current = idea.verdict?.manual_status || "idea";
+              return (
+                <div key={idea.id} style={{ background: "#111", padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      #{idea.id} — {idea.title}
+                    </span>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#555" }}>
+                        {formatCV(idea.total_cv)} CV
+                      </span>
+                      {idea.verdict?.linked_repo && (
+                        <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#3b82f6" }}>
+                          ↗ {idea.verdict.linked_repo}
+                        </span>
+                      )}
+                      {idea.verdict?.score !== null && idea.verdict?.score !== undefined && (
+                        <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#22c55e" }}>
+                          score: {idea.verdict.score}
+                        </span>
+                      )}
+                      {idea.archived && (
+                        <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "#555", background: "#181818", border: "1px solid #242424", padding: "2px 6px", borderRadius: 3 }}>
+                          archived on larv.ai
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    {saved === idea.id && (
+                      <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#22c55e" }}>saved ✓</span>
+                    )}
+                    <select
+                      value={current}
+                      onChange={(e) => setStatus(idea.id, e.target.value)}
+                      disabled={saving === idea.id}
+                      style={{
+                        background: "#181818",
+                        border: "1px solid #333",
+                        color: "#e8e8e8",
+                        fontFamily: "IBM Plex Mono, monospace",
+                        fontSize: 11,
+                        padding: "6px 10px",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {STATUSES.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </main>
+    </>
+  );
+}
