@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ScoreRing } from "./components/ScoreRing";
 
+export const dynamic = "force-dynamic";
+
 interface Verdict {
   score: number | null;
   is_stalled: boolean;
@@ -38,7 +40,7 @@ async function getData(): Promise<{ ideas: Idea[]; stats: Stats | null }> {
         : "http://localhost:3000");
 
     const res = await fetch(`${baseUrl}/api/labs`, {
-      next: { revalidate: 120 },
+      cache: "no-store",
     });
 
     if (!res.ok) return { ideas: [], stats: null };
