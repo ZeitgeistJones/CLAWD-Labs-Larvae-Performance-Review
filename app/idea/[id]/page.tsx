@@ -103,7 +103,7 @@ export default function IdeaPage({
   };
 
   const title = verdict?.idea_title || ideaData?.title || `Idea #${ideaId}`;
-  const status = verdict?.idea_status || ideaData?.status || "pending";
+  const status = verdict?.manual_status || verdict?.idea_status || ideaData?.status || "pending";
   const consensus =
     verdict?.larvae_consensus ||
     ideaData?.aggregated_opinion_short ||
