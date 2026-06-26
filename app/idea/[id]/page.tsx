@@ -138,7 +138,7 @@ export default function IdeaPage({
               <span style={{ color: "var(--clawd)" }}>{formatCV(totalCV)}</span> CV staked by community
             </span>
             {repoName && (
-              
+              <a
                 href={verdict?.repo_url || `https://github.com/clawdbotatg/${repoName}`}
                 target="_blank"
                 rel="noopener noreferrer"
