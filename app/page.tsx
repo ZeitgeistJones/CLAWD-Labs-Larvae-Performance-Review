@@ -56,44 +56,26 @@ function formatCV(cv: number): string {
   return String(cv);
 }
 
-function StatusBadge({ status, isStalled }: { status: string; isStalled: boolean }) {
-  if (isStalled) return <span className="badge badge-stalled">⚠ Stalled</span>;
-  const map: Record<string, string> = {
-    shipped: "badge-shipped",
-    building: "badge-building",
-    pending: "badge-pending",
-    rejected: "badge-rejected",
-  };
-  const labels: Record<string, string> = {
-    shipped: "✓ Shipped",
-    building: "◎ Building",
-    pending: "○ Pending",
-    rejected: "✕ Rejected",
-  };
-  return (
-    <span className={`badge ${map[status] || "badge-pending"}`}>
-      {labels[status] || status}
-    </span>
-  );
-}
-
 export default async function Home() {
   const { ideas, stats } = await getData();
 
-  const shipped = ideas.filter((i) => i.status === "shipped");
-  const active = ideas.filter(
-    (i) => i.status === "building" && !i.verdict?.is_stalled
+  const scored = ideas.filter(
+    (i) => i.verdict?.score !== null && i.verdict?.score !== undefined && !i.verdict?.is_stalled
   );
-  const stalled = ideas.filter(
-    (i) =>
-      i.verdict?.is_stalled ||
-      (i.status === "building" &&
-        i.verdict?.last_commit_days !== null &&
-        (i.verdict?.last_commit_days || 0) > 30)
+  const stalled = ideas.filter((i) => i.verdict?.is_stalled);
+  const repoFound = ideas.filter(
+    (i) => i.verdict?.linked_repo && !i.verdict?.score && !i.verdict?.is_stalled
   );
-  const pending = ideas.filter(
-    (i) => i.status === "pending" || i.status === "rejected"
-  );
+  const noRepo = ideas.filter((i) => !i.verdict?.linked_repo);
+
+  // sort scored by score descending
+  scored.sort((a, b) => (b.verdict?.score || 0) - (a.verdict?.score || 0));
+
+  // sort everything else by cv descending
+  const byCV = (a: Idea, b: Idea) => (b.total_cv || 0) - (a.total_cv || 0);
+  stalled.sort(byCV);
+  repoFound.sort(byCV);
+  noRepo.sort(byCV);
 
   return (
     <>
@@ -113,8 +95,8 @@ export default async function Home() {
               <span className="stat-value">{stats.total}</span>
             </div>
             <div className="stat-cell">
-              <span className="stat-label">Shipped</span>
-              <span className="stat-value green">{stats.shipped}</span>
+              <span className="stat-label">Scored</span>
+              <span className="stat-value green">{scored.length}</span>
             </div>
             <div className="stat-cell">
               <span className="stat-label">Avg Score</span>
@@ -123,33 +105,36 @@ export default async function Home() {
               </span>
             </div>
             <div className="stat-cell">
-              <span className="stat-label">Delivered</span>
-              <span className="stat-value green">{stats.delivered}</span>
+              <span className="stat-label">Gone Quiet</span>
+              <span className="stat-value amber">{stalled.length}</span>
             </div>
             <div className="stat-cell">
-              <span className="stat-label">Fell Short</span>
-              <span className="stat-value amber">{stats.fell_short}</span>
+              <span className="stat-label">No Repo</span>
+              <span className="stat-value">{noRepo.length}</span>
             </div>
           </div>
         )}
 
-        {shipped.length > 0 && (
+        {scored.length > 0 && (
           <section style={{ marginBottom: 48 }}>
             <div className="section-header">
-              <span className="section-title">Shipped</span>
-              <span className="section-count">{shipped.length}</span>
+              <span className="section-title">Scored</span>
+              <span className="section-count">{scored.length}</span>
               <div className="section-divider" />
             </div>
             <div className="ideas-list">
-              {shipped.map((idea) => (
+              {scored.map((idea) => (
                 <Link key={idea.id} href={`/idea/${idea.id}`} className="idea-card">
                   <div className="idea-card-left">
                     <span className="idea-card-title">{idea.title}</span>
                     <div className="idea-card-meta">
-                      <StatusBadge status={idea.status} isStalled={idea.verdict?.is_stalled || false} />
+                      <span className="badge badge-shipped">✓ Analyzed</span>
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
                       {idea.verdict?.linked_repo && (
                         <span className="cv-tag">{idea.verdict.linked_repo}</span>
+                      )}
+                      {idea.verdict?.last_commit_days !== null && idea.verdict?.last_commit_days !== undefined && (
+                        <span className="cv-tag">last commit {idea.verdict.last_commit_days}d ago</span>
                       )}
                     </div>
                     {idea.verdict?.larvae_consensus && (
@@ -165,23 +150,23 @@ export default async function Home() {
           </section>
         )}
 
-        {active.length > 0 && (
+        {repoFound.length > 0 && (
           <section style={{ marginBottom: 48 }}>
             <div className="section-header">
-              <span className="section-title">In Progress</span>
-              <span className="section-count">{active.length}</span>
+              <span className="section-title">Repo Found — Unscored</span>
+              <span className="section-count">{repoFound.length}</span>
               <div className="section-divider" />
             </div>
             <div className="ideas-list">
-              {active.map((idea) => (
+              {repoFound.map((idea) => (
                 <Link key={idea.id} href={`/idea/${idea.id}`} className="idea-card">
                   <div className="idea-card-left">
                     <span className="idea-card-title">{idea.title}</span>
                     <div className="idea-card-meta">
-                      <StatusBadge status={idea.status} isStalled={false} />
+                      <span className="badge badge-building">◎ Active</span>
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
-                      {idea.verdict?.last_commit_days !== null && idea.verdict?.last_commit_days !== undefined && (
-                        <span className="cv-tag">last commit {idea.verdict.last_commit_days}d ago</span>
+                      {idea.verdict?.linked_repo && (
+                        <span className="cv-tag">{idea.verdict.linked_repo}</span>
                       )}
                     </div>
                     {idea.verdict?.larvae_consensus && (
@@ -210,7 +195,7 @@ export default async function Home() {
                   <div className="idea-card-left">
                     <span className="idea-card-title">{idea.title}</span>
                     <div className="idea-card-meta">
-                      <span className="badge badge-stalled">⚠ Stalled</span>
+                      <span className="badge badge-stalled">⚠ Gone Quiet</span>
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
                       {idea.verdict?.last_commit_days !== null && idea.verdict?.last_commit_days !== undefined && (
                         <span className="cv-tag">{idea.verdict.last_commit_days}d since last commit</span>
@@ -221,7 +206,7 @@ export default async function Home() {
                     )}
                   </div>
                   <div className="idea-card-right">
-                    <ScoreRing score={null} />
+                    <ScoreRing score={idea.verdict?.score ?? null} />
                   </div>
                 </Link>
               ))}
@@ -229,20 +214,20 @@ export default async function Home() {
           </section>
         )}
 
-        {pending.length > 0 && (
+        {noRepo.length > 0 && (
           <section>
             <div className="section-header">
-              <span className="section-title">Other</span>
-              <span className="section-count">{pending.length}</span>
+              <span className="section-title">No Repo Found</span>
+              <span className="section-count">{noRepo.length}</span>
               <div className="section-divider" />
             </div>
             <div className="ideas-list">
-              {pending.map((idea) => (
+              {noRepo.map((idea) => (
                 <Link key={idea.id} href={`/idea/${idea.id}`} className="idea-card">
                   <div className="idea-card-left">
                     <span className="idea-card-title">{idea.title}</span>
                     <div className="idea-card-meta">
-                      <StatusBadge status={idea.status} isStalled={false} />
+                      <span className="badge badge-pending">○ No repo</span>
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
                     </div>
                   </div>
