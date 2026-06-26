@@ -26,50 +26,51 @@ export async function scoreAlignment(
   readmeExcerpt: string
 ): Promise<AlignmentResult> {
   const commitList = recentCommitMessages.slice(0, 5).join("\n- ");
+  const consensusTrimmed = larvaeConsensus.slice(0, 1500);
+  const readmeTrimmed = readmeExcerpt ? readmeExcerpt.slice(0, 600) : "No README found";
 
   const prompt = `You are scoring how well a shipped build matches what the CLAWD community's AI larva agents asked for.
 
-WHAT THE LARVAE CONSENSUS SAID (this is the community's aggregated opinion on what they wanted built):
-${larvaeConsensus}
+WHAT THE LARVAE CONSENSUS SAID:
+${consensusTrimmed}
 
 THE ORIGINAL IDEA:
 Title: ${ideaTitle}
-Description: ${ideaDescription}
+Description: ${ideaDescription.slice(0, 500)}
 
 WHAT ACTUALLY SHIPPED:
 Repo description: ${repoDescription || "No description provided"}
 Recent commit messages:
 - ${commitList || "No commits found"}
 README excerpt:
-${readmeExcerpt ? readmeExcerpt.slice(0, 800) : "No README found"}
+${readmeTrimmed}
 
 Score this build on two dimensions:
 
-PRIMARY (0-75 points): Did the thing the larvae wanted actually get built? This is the most important factor. Does what shipped match the spirit and specifics of what the community asked for? Full points = built exactly what was requested. Zero = completely missed the ask.
+PRIMARY (0-75 points): Did the thing the larvae wanted actually get built? Does what shipped match the spirit and specifics of what the community asked for?
 
-SECONDARY (0-24 points): Does it work reasonably well, is it usable, does it look decent? This is a much smaller factor. Don't nitpick design. Just: is it functional and not embarrassing.
+SECONDARY (0-24 points): Does it work reasonably well, is it usable, does it look decent?
 
-IMPORTANT: 0 and 100 are impossible. Minimum realistic score is 5. Maximum is 95. A solid delivery that hits the community's ask should score 65-78.
+IMPORTANT: 0 and 100 are impossible. Min score is 5, max is 95. A solid delivery should score 65-78.
 
-Respond ONLY with this JSON (no extra text):
-{
-  "primary_score": <number 0-75>,
-  "secondary_score": <number 0-24>,
-  "alignment_summary": "<2-3 sentences: what the larvae wanted vs what shipped, be specific and direct>",
-  "quality_notes": "<1-2 sentences: honest take on execution quality>"
-}`;
+Respond ONLY with this JSON and nothing else:
+{"primary_score":35,"secondary_score":15,"alignment_summary":"2-3 sentences here","quality_notes":"1-2 sentences here"}`;
 
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5",
-    max_tokens: 500,
+    max_tokens: 1024,
     messages: [{ role: "user", content: prompt }],
   });
 
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";
 
+  // Extract JSON from response even if there's extra text
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  const jsonStr = jsonMatch ? jsonMatch[0] : text;
+
   try {
-    const parsed = JSON.parse(text.trim());
+    const parsed = JSON.parse(jsonStr);
     const primary = Math.min(75, Math.max(0, parsed.primary_score || 0));
     const secondary = Math.min(24, Math.max(0, parsed.secondary_score || 0));
     const total = Math.min(95, Math.max(5, primary + secondary));
@@ -100,42 +101,38 @@ export async function analyzeStall(
   readmeExcerpt: string
 ): Promise<StallResult> {
   const commitList = recentCommitMessages.slice(0, 5).join("\n- ");
+  const consensusTrimmed = larvaeConsensus.slice(0, 500);
 
-  const prompt = `A build in the CLAWD ecosystem hasn't been updated in ${daysSinceCommit} days. Give your honest read on why it might have stopped.
+  const prompt = `A build in the CLAWD ecosystem hasn't been updated in ${daysSinceCommit} days.
 
-WHAT WAS BEING BUILT:
-${ideaTitle}
+WHAT WAS BEING BUILT: ${ideaTitle}
 
-WHAT THE COMMUNITY ASKED FOR:
-${larvaeConsensus || "No consensus available"}
+WHAT THE COMMUNITY ASKED FOR: ${consensusTrimmed}
 
-LAST COMMIT MESSAGES (most recent first):
+LAST COMMIT MESSAGES:
 - ${commitList || "No commits found"}
 
-README excerpt:
-${readmeExcerpt ? readmeExcerpt.slice(0, 600) : "No README"}
+README: ${readmeExcerpt ? readmeExcerpt.slice(0, 400) : "No README"}
 
-Read the tone and content of those last commits. A final commit saying "fix typo in README" after silence reads differently than "WIP: refactoring auth". Make an educated guess.
+Make an educated guess on why it stopped. Possible reasons: quietly finished, replaced by something newer, abandoned mid-build, blocked on external dependency, scope changed.
 
-Possible reasons: quietly finished and moved on, replaced by something newer, abandoned mid-build, blocked on external dependency, scope changed.
-
-Respond ONLY with this JSON:
-{
-  "reason": "<1-2 sentences explaining why this probably stopped, based on the evidence>",
-  "confidence": "<high|medium|low>"
-}`;
+Respond ONLY with this JSON and nothing else:
+{"reason":"1-2 sentences here","confidence":"low"}`;
 
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5",
-    max_tokens: 200,
+    max_tokens: 300,
     messages: [{ role: "user", content: prompt }],
   });
 
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";
 
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  const jsonStr = jsonMatch ? jsonMatch[0] : text;
+
   try {
-    const parsed = JSON.parse(text.trim());
+    const parsed = JSON.parse(jsonStr);
     return {
       reason: parsed.reason || "No clear signal on why activity stopped.",
       confidence: parsed.confidence || "low",
