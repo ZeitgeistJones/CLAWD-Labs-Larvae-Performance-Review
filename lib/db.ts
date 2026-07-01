@@ -87,8 +87,16 @@ export async function upsertVerdict(data: {
 
 export async function setManualStatus(ideaId: number, manualStatus: string) {
   await sql`
-    UPDATE verdicts SET manual_status = ${manualStatus}, updated_at = NOW()
-    WHERE idea_id = ${ideaId}
+    INSERT INTO verdicts (idea_id, idea_title, manual_status, idea_status, total_cv, updated_at)
+    VALUES (${ideaId}, ${`Idea #${ideaId}`}, ${manualStatus}, 'pending', 0, NOW())
+    ON CONFLICT (idea_id) DO UPDATE SET
+      manual_status = ${manualStatus},
+      score = NULL,
+      primary_score = NULL,
+      secondary_score = NULL,
+      alignment_summary = NULL,
+      quality_notes = NULL,
+      updated_at = NOW()
   `;
 }
 
@@ -98,6 +106,11 @@ export async function setRepoOverride(ideaId: number, repoName: string) {
     VALUES (${ideaId}, ${`Idea #${ideaId}`}, ${repoName}, 'pending', 0, NOW())
     ON CONFLICT (idea_id) DO UPDATE SET
       linked_repo_override = ${repoName},
+      score = NULL,
+      primary_score = NULL,
+      secondary_score = NULL,
+      alignment_summary = NULL,
+      quality_notes = NULL,
       updated_at = NOW()
   `;
 }

@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { statusLabel } from "@/lib/status";
 
 const STATUSES = ["idea", "building", "shipped", "stalled", "archived"];
 
 interface Idea {
   id: number;
   title: string;
+  status: string;
   total_cv: number;
   archived: boolean;
   verdict: {
@@ -48,15 +50,27 @@ export default function AdminPage() {
   const saveStatus = async (ideaId: number, manualStatus: string) => {
     setSaving(ideaId);
     try {
-      await fetch("/api/admin", {
+      const res = await fetch("/api/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ideaId, manualStatus }),
       });
+      const data = await res.json();
       setIdeas((prev) =>
         prev.map((i) =>
           i.id === ideaId
-            ? { ...i, verdict: { ...i.verdict, manual_status: manualStatus, score: i.verdict?.score ?? null, linked_repo: i.verdict?.linked_repo ?? null, linked_repo_override: i.verdict?.linked_repo_override ?? null } }
+            ? {
+                ...i,
+                verdict: {
+                  manual_status: manualStatus,
+                  score: data.verdict?.score ?? i.verdict?.score ?? null,
+                  linked_repo: data.verdict?.linked_repo ?? i.verdict?.linked_repo ?? null,
+                  linked_repo_override:
+                    data.verdict?.linked_repo_override ??
+                    i.verdict?.linked_repo_override ??
+                    null,
+                },
+              }
             : i
         )
       );
@@ -72,11 +86,29 @@ export default function AdminPage() {
   const saveRepo = async (ideaId: number) => {
     setSaving(ideaId);
     try {
-      await fetch("/api/admin", {
+      const res = await fetch("/api/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ideaId, repoOverride: repoInputs[ideaId] || "" }),
       });
+      const data = await res.json();
+      if (data.verdict) {
+        setIdeas((prev) =>
+          prev.map((i) =>
+            i.id === ideaId
+              ? {
+                  ...i,
+                  verdict: {
+                    manual_status: data.verdict.manual_status ?? i.verdict?.manual_status ?? null,
+                    score: data.verdict.score ?? null,
+                    linked_repo: data.verdict.linked_repo ?? null,
+                    linked_repo_override: data.verdict.linked_repo_override ?? null,
+                  },
+                }
+              : i
+          )
+        );
+      }
       setSaved(ideaId);
       setTimeout(() => setSaved(null), 2000);
     } catch {
@@ -99,7 +131,10 @@ export default function AdminPage() {
       <main style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 24px 80px" }}>
         <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Status & Repo Override</h1>
-          <p style={{ fontSize: 13, color: "#888" }}>Set the real status and manually link a GitHub repo for each idea. Repo name must match exactly what's in the clawdbotatg GitHub org.</p>
+          <p style={{ fontSize: 13, color: "#888" }}>
+            Set review status and link the GitHub repo. Saving auto-runs scoring when review status is shipped.
+            Community status comes from larv.ai (read-only here).
+          </p>
         </div>
 
         {loading ? (
@@ -107,7 +142,7 @@ export default function AdminPage() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 1, background: "#242424", border: "1px solid #242424", borderRadius: 6, overflow: "hidden" }}>
             {ideas.map((idea) => {
-              const current = idea.verdict?.manual_status || "idea";
+              const review = idea.verdict?.manual_status || "idea";
               return (
                 <div key={idea.id} style={{ background: "#111", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
@@ -116,10 +151,12 @@ export default function AdminPage() {
                     </span>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                       {saved === idea.id && (
-                        <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#22c55e" }}>saved ✓</span>
+                        <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#22c55e" }}>
+                          {saving === idea.id ? "scoring..." : "saved ✓"}
+                        </span>
                       )}
                       <select
-                        value={current}
+                        value={review}
                         onChange={(e) => saveStatus(idea.id, e.target.value)}
                         disabled={saving === idea.id}
                         style={{ background: "#181818", border: "1px solid #333", color: "#e8e8e8", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, padding: "6px 10px", borderRadius: 4, cursor: "pointer", letterSpacing: "0.04em", textTransform: "uppercase" }}
@@ -131,11 +168,22 @@ export default function AdminPage() {
                     </div>
                   </div>
 
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#555" }}>
+                      Community: {statusLabel(idea.status)}
+                    </span>
+                    {idea.verdict?.linked_repo && (
+                      <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#555" }}>
+                        linked: {idea.verdict.linked_repo}
+                      </span>
+                    )}
+                  </div>
+
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#555", flexShrink: 0 }}>repo:</span>
                     <input
                       type="text"
-                      placeholder="exact-repo-name (e.g. leftclaw-services)"
+                      placeholder="exact-repo-name (e.g. clawdETH)"
                       value={repoInputs[idea.id] || ""}
                       onChange={(e) => setRepoInputs((prev) => ({ ...prev, [idea.id]: e.target.value }))}
                       style={{ flex: 1, background: "#181818", border: "1px solid #333", color: "#e8e8e8", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, padding: "6px 10px", borderRadius: 4, outline: "none" }}

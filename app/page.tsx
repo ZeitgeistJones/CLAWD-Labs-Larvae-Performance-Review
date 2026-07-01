@@ -1,5 +1,11 @@
 import Link from "next/link";
 import { ScoreRing } from "./components/ScoreRing";
+import {
+  getCommunityStatus,
+  getReviewStatus,
+  statusLabel,
+  statusBadgeClass,
+} from "@/lib/status";
 
 export const dynamic = "force-dynamic";
 
@@ -58,21 +64,42 @@ function formatCV(cv: number): string {
   return String(cv);
 }
 
-function getEffectiveStatus(idea: Idea): string {
-  if (idea.verdict?.manual_status) return idea.verdict.manual_status;
-  if (idea.verdict?.is_stalled) return "stalled";
-  if (idea.archived) return "archived";
-  return "idea";
+function StatusBadges({ idea }: { idea: Idea }) {
+  const community = getCommunityStatus(idea);
+  const review = getReviewStatus(idea, idea.verdict);
+  const mismatch = community !== review;
+
+  return (
+    <>
+      <span className={`badge ${statusBadgeClass(review)}`}>
+        Review: {statusLabel(review)}
+      </span>
+      {mismatch && (
+        <span className="cv-tag" title="Status on larv.ai">
+          Community: {statusLabel(community)}
+        </span>
+      )}
+    </>
+  );
 }
 
 export default async function Home() {
   const { ideas, stats } = await getData();
 
-  const shipped = ideas.filter((i) => getEffectiveStatus(i) === "shipped");
-  const building = ideas.filter((i) => getEffectiveStatus(i) === "building");
-  const stalled = ideas.filter((i) => getEffectiveStatus(i) === "stalled");
-  const active = ideas.filter((i) => getEffectiveStatus(i) === "idea" && !i.archived);
-  const archived = ideas.filter((i) => getEffectiveStatus(i) === "archived" || (i.archived && !i.verdict?.manual_status));
+  const shipped = ideas.filter(
+    (i) => getReviewStatus(i, i.verdict) === "shipped"
+  );
+  const building = ideas.filter(
+    (i) => getReviewStatus(i, i.verdict) === "building"
+  );
+  const stalled = ideas.filter(
+    (i) => getReviewStatus(i, i.verdict) === "stalled"
+  );
+  const active = ideas.filter(
+    (i) =>
+      getReviewStatus(i, i.verdict) === "pending" &&
+      !i.archived
+  );
 
   const byCV = (a: Idea, b: Idea) => (b.total_cv || 0) - (a.total_cv || 0);
   shipped.sort((a, b) => (b.verdict?.score || 0) - (a.verdict?.score || 0));
@@ -131,7 +158,7 @@ export default async function Home() {
                   <div className="idea-card-left">
                     <span className="idea-card-title">{idea.title}</span>
                     <div className="idea-card-meta">
-                      <span className="badge badge-shipped">✓ Shipped</span>
+                      <StatusBadges idea={idea} />
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
                       {idea.verdict?.linked_repo && (
                         <span className="cv-tag">{idea.verdict.linked_repo}</span>
@@ -166,7 +193,7 @@ export default async function Home() {
                   <div className="idea-card-left">
                     <span className="idea-card-title">{idea.title}</span>
                     <div className="idea-card-meta">
-                      <span className="badge badge-building">◎ Building</span>
+                      <StatusBadges idea={idea} />
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
                       {idea.verdict?.linked_repo && (
                         <span className="cv-tag">{idea.verdict.linked_repo}</span>
@@ -201,7 +228,7 @@ export default async function Home() {
                   <div className="idea-card-left">
                     <span className="idea-card-title">{idea.title}</span>
                     <div className="idea-card-meta">
-                      <span className="badge badge-stalled">⚠ Gone Quiet</span>
+                      <StatusBadges idea={idea} />
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
                       {idea.verdict?.last_commit_days !== null && idea.verdict?.last_commit_days !== undefined && (
                         <span className="cv-tag">{idea.verdict.last_commit_days}d since last commit</span>
@@ -233,7 +260,7 @@ export default async function Home() {
                   <div className="idea-card-left">
                     <span className="idea-card-title">{idea.title}</span>
                     <div className="idea-card-meta">
-                      <span className="badge badge-pending">○ Idea</span>
+                      <StatusBadges idea={idea} />
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
                     </div>
                   </div>

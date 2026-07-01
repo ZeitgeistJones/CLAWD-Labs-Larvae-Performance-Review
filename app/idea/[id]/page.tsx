@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ScoreRing } from "../../components/ScoreRing";
+import {
+  getCommunityStatus,
+  getReviewStatus,
+  statusLabel,
+  statusBadgeClass,
+} from "@/lib/status";
 
 interface Verdict {
   idea_id: number;
@@ -12,8 +18,6 @@ interface Verdict {
   secondary_score: number | null;
   alignment_summary: string | null;
   quality_notes: string | null;
-  stall_reason: string | null;
-  stall_confidence: string | null;
   linked_repo: string | null;
   linked_repo_override: string | null;
   repo_url: string | null;
@@ -24,6 +28,16 @@ interface Verdict {
   manual_status: string | null;
   total_cv: number;
   updated_at: string;
+}
+
+interface IdeaData {
+  title: string;
+  description: string;
+  status: string;
+  archived: boolean;
+  total_cv: number;
+  aggregated_opinion: string | null;
+  aggregated_opinion_short: string | null;
 }
 
 function scoreClass(score: number) {
@@ -45,14 +59,7 @@ export default function IdeaPage({
 }) {
   const [ideaId, setIdeaId] = useState<number | null>(null);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
-  const [ideaData, setIdeaData] = useState<{
-    title: string;
-    description: string;
-    status: string;
-    total_cv: number;
-    aggregated_opinion: string | null;
-    aggregated_opinion_short: string | null;
-  } | null>(null);
+  const [ideaData, setIdeaData] = useState<IdeaData | null>(null);
   const [loading, setLoading] = useState(true);
   const [scoring, setScoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,24 +71,25 @@ export default function IdeaPage({
   useEffect(() => {
     if (!ideaId) return;
 
-    fetch(`https://larv.ai/api/labs/${ideaId}`)
+    fetch(`/api/verdict/${ideaId}`)
       .then((r) => r.json())
       .then((data) => {
+        if (data.verdict) setVerdict(data.verdict);
         if (data.idea) setIdeaData(data.idea);
+        setLoading(false);
       })
-      .catch(() => {});
+      .catch(() => setLoading(false));
 
     fetch(`/api/score`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ideaId }),
+      body: JSON.stringify({ ideaId, runLlm: false, refreshGitHubOnly: true }),
     })
       .then((r) => r.json())
       .then((data) => {
         if (data.verdict) setVerdict(data.verdict);
-        setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {});
   }, [ideaId]);
 
   const runScore = async () => {
@@ -92,11 +100,11 @@ export default function IdeaPage({
       const res = await fetch(`/api/score`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ideaId, forceRescore: true }),
+        body: JSON.stringify({ ideaId, forceRescore: true, runLlm: true }),
       });
       const data = await res.json();
       if (data.verdict) setVerdict(data.verdict);
-      else setError(data.reason || "Nothing to score yet.");
+      else setError(data.error || "Nothing to score yet.");
     } catch {
       setError("Failed to run analysis.");
     } finally {
@@ -105,7 +113,18 @@ export default function IdeaPage({
   };
 
   const title = verdict?.idea_title || ideaData?.title || `Idea #${ideaId}`;
-  const status = verdict?.manual_status || verdict?.idea_status || ideaData?.status || "pending";
+  const communityStatus = getCommunityStatus({
+    status: ideaData?.status || verdict?.idea_status,
+    archived: ideaData?.archived,
+  });
+  const reviewStatus = getReviewStatus(
+    {
+      status: ideaData?.status || verdict?.idea_status,
+      archived: ideaData?.archived,
+    },
+    verdict
+  );
+  const statusMismatch = communityStatus !== reviewStatus;
   const consensus =
     verdict?.larvae_consensus ||
     ideaData?.aggregated_opinion_short ||
@@ -131,9 +150,14 @@ export default function IdeaPage({
         <div className="detail-header">
           <h1 className="detail-title">{title}</h1>
           <div className="detail-meta">
-            <span className={`badge badge-${verdict?.is_stalled ? "stalled" : status}`}>
-              {verdict?.is_stalled ? "⚠ Stalled" : status === "shipped" ? "✓ Shipped" : status === "building" ? "◎ Building" : status === "stalled" ? "⚠ Stalled" : status === "archived" ? "✕ Archived" : "○ Pending"}
+            <span className={`badge ${statusBadgeClass(reviewStatus)}`}>
+              Review: {statusLabel(reviewStatus)}
             </span>
+            {statusMismatch && (
+              <span className="cv-tag" title="Status on larv.ai">
+                Community: {statusLabel(communityStatus)}
+              </span>
+            )}
             <span className="cv-tag">
               <span style={{ color: "var(--clawd)" }}>{formatCV(totalCV)}</span> CV staked by community
             </span>
@@ -155,15 +179,16 @@ export default function IdeaPage({
         ) : (
           <div className="detail-grid">
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              {verdict?.is_stalled && verdict.stall_reason && (
+              {verdict?.is_stalled && (
                 <div className="stall-box">
                   <span className="stall-icon">⚠</span>
                   <div className="stall-content">
                     <div className="stall-title">
                       Gone quiet · {verdict.last_commit_days}d since last commit
-                      {verdict.stall_confidence && ` · ${verdict.stall_confidence} confidence`}
                     </div>
-                    <p className="stall-text">{verdict.stall_reason}</p>
+                    <p className="stall-text">
+                      No GitHub activity in over 30 days. The repo may be finished, paused, or abandoned.
+                    </p>
                   </div>
                 </div>
               )}
@@ -206,8 +231,8 @@ export default function IdeaPage({
               {!verdict?.score && (
                 <div className="score-cta">
                   <p className="score-cta-text">
-                    {status === "shipped"
-                      ? "This build is marked shipped but hasn't been scored yet."
+                    {reviewStatus === "shipped"
+                      ? "Marked shipped in review but not scored yet."
                       : "No analysis yet for this build."}
                   </p>
                   <button className="score-btn" onClick={runScore} disabled={scoring}>
