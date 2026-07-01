@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { fetchLabsIdeas } from "@/lib/data";
-import { initDb, getAllVerdicts, getStats } from "@/lib/db";
+import { initDb, getAllVerdicts, getStats, getBuilderSummary } from "@/lib/db";
 
 export async function GET() {
   try {
     await initDb();
 
-    const [ideas, verdicts, stats] = await Promise.all([
+    const [ideas, verdicts, stats, builderMeta] = await Promise.all([
       fetchLabsIdeas(),
       getAllVerdicts(),
       getStats(),
+      getBuilderSummary(),
     ]);
 
     const verdictMap = new Map(
@@ -24,7 +25,13 @@ export async function GET() {
     // sort by total_cv descending
     merged.sort((a: any, b: any) => (b.total_cv || 0) - (a.total_cv || 0));
 
-    return NextResponse.json({ ideas: merged, stats });
+    return NextResponse.json({
+      ideas: merged,
+      stats,
+      builderSummary: builderMeta?.builder_summary || null,
+      builderSummaryAt: builderMeta?.updated_at || null,
+      builderSummaryCount: builderMeta?.summary_scored_count ?? null,
+    });
   } catch (err) {
     console.error("Labs API error:", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

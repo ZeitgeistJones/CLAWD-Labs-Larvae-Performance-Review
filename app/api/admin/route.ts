@@ -1,12 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { initDb, setManualStatus, setRepoOverride, setEvidenceCommits } from "@/lib/db";
+import {
+  initDb,
+  setManualStatus,
+  setRepoOverride,
+  setEvidenceCommits,
+} from "@/lib/db";
 import { scoreIdea } from "@/lib/scoreIdea";
+import { generateBuilderSummary } from "@/lib/builderSummary";
 
 export async function POST(request: NextRequest) {
   try {
     await initDb();
-    const { ideaId, manualStatus, repoOverride, evidenceCommits } =
-      await request.json();
+    const body = await request.json();
+
+    if (body.refreshBuilderSummary) {
+      const result = await generateBuilderSummary();
+      return NextResponse.json({ success: true, builderSummary: result });
+    }
+
+    const { ideaId, manualStatus, repoOverride, evidenceCommits } = body;
 
     if (!ideaId) {
       return NextResponse.json({ error: "ideaId required" }, { status: 400 });
@@ -41,6 +53,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, verdict });
   } catch (err) {
     console.error("Admin API error:", err);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

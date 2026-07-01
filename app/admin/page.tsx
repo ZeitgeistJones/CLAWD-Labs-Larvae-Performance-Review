@@ -54,12 +54,20 @@ export default function AdminPage() {
   const [saved, setSaved] = useState<number | null>(null);
   const [repoInputs, setRepoInputs] = useState<Record<number, string>>({});
   const [evidenceInputs, setEvidenceInputs] = useState<Record<number, string>>({});
+  const [builderSummary, setBuilderSummary] = useState<string | null>(null);
+  const [builderSummaryAt, setBuilderSummaryAt] = useState<string | null>(null);
+  const [builderSummaryCount, setBuilderSummaryCount] = useState<number | null>(null);
+  const [refreshingSummary, setRefreshingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/labs")
       .then((r) => r.json())
       .then((data) => {
         setIdeas(data.ideas || []);
+        setBuilderSummary(data.builderSummary || null);
+        setBuilderSummaryAt(data.builderSummaryAt || null);
+        setBuilderSummaryCount(data.builderSummaryCount ?? null);
         const repos: Record<number, string> = {};
         const evidence: Record<number, string> = {};
         for (const idea of data.ideas || []) {
@@ -73,6 +81,30 @@ export default function AdminPage() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  const refreshBuilderSummary = async () => {
+    setRefreshingSummary(true);
+    setSummaryError(null);
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshBuilderSummary: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSummaryError(data.error || "Failed to refresh summary");
+        return;
+      }
+      setBuilderSummary(data.builderSummary?.summary || null);
+      setBuilderSummaryAt(data.builderSummary?.updatedAt || null);
+      setBuilderSummaryCount(data.builderSummary?.scoredCount ?? null);
+    } catch {
+      setSummaryError("Failed to refresh summary");
+    } finally {
+      setRefreshingSummary(false);
+    }
+  };
 
   const saveStatus = async (ideaId: number, manualStatus: string) => {
     setSaving(ideaId);
@@ -165,10 +197,36 @@ export default function AdminPage() {
       <main style={{ maxWidth: 1000, margin: "0 auto", padding: "32px 24px 80px" }}>
         <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Status & Repo Override</h1>
-          <p style={{ fontSize: 13, color: "#888" }}>
+          <p style={{ fontSize: 13, color: "#888", marginBottom: 16 }}>
             Set review status and link the GitHub repo. For labs work inside an existing repo,
             paste the commit SHA(s) or URL(s) that implemented the idea. Saving auto-rescores.
           </p>
+
+          <div style={{ background: "#111", border: "1px solid #242424", borderRadius: 6, padding: "16px 20px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: builderSummary ? 12 : 0 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Dashboard builder summary</div>
+                <div style={{ fontSize: 11, color: "#555", fontFamily: "IBM Plex Mono, monospace" }}>
+                  {builderSummaryAt
+                    ? `Last updated ${new Date(builderSummaryAt).toLocaleDateString()} · ${builderSummaryCount ?? 0} builds`
+                    : "Not generated yet · needs 3+ scored builds"}
+                </div>
+              </div>
+              <button
+                onClick={refreshBuilderSummary}
+                disabled={refreshingSummary}
+                style={{ background: "#333", border: "1px solid #444", color: "#e8e8e8", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, padding: "8px 16px", borderRadius: 4, cursor: "pointer", letterSpacing: "0.04em", flexShrink: 0 }}
+              >
+                {refreshingSummary ? "Generating..." : "Refresh summary"}
+              </button>
+            </div>
+            {summaryError && (
+              <p style={{ fontSize: 12, color: "#f59e0b", marginBottom: 12 }}>{summaryError}</p>
+            )}
+            {builderSummary && (
+              <p style={{ fontSize: 13, color: "#aaa", lineHeight: 1.6, margin: 0 }}>{builderSummary}</p>
+            )}
+          </div>
         </div>
 
         {loading ? (

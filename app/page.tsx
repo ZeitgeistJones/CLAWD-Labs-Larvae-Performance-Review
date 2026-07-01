@@ -40,7 +40,13 @@ interface Stats {
   fell_short: string;
 }
 
-async function getData(): Promise<{ ideas: Idea[]; stats: Stats | null }> {
+async function getData(): Promise<{
+  ideas: Idea[];
+  stats: Stats | null;
+  builderSummary: string | null;
+  builderSummaryAt: string | null;
+  builderSummaryCount: number | null;
+}> {
   try {
     const baseUrl =
       process.env.NEXT_PUBLIC_BASE_URL ||
@@ -52,10 +58,24 @@ async function getData(): Promise<{ ideas: Idea[]; stats: Stats | null }> {
       cache: "no-store",
     });
 
-    if (!res.ok) return { ideas: [], stats: null };
+    if (!res.ok) {
+      return {
+        ideas: [],
+        stats: null,
+        builderSummary: null,
+        builderSummaryAt: null,
+        builderSummaryCount: null,
+      };
+    }
     return res.json();
   } catch {
-    return { ideas: [], stats: null };
+    return {
+      ideas: [],
+      stats: null,
+      builderSummary: null,
+      builderSummaryAt: null,
+      builderSummaryCount: null,
+    };
   }
 }
 
@@ -85,7 +105,13 @@ function StatusBadges({ idea }: { idea: Idea }) {
 }
 
 export default async function Home() {
-  const { ideas, stats } = await getData();
+  const {
+    ideas,
+    stats,
+    builderSummary,
+    builderSummaryAt,
+    builderSummaryCount,
+  } = await getData();
 
   const shipped = ideas.filter(
     (i) => getReviewStatus(i, i.verdict) === "shipped"
@@ -142,6 +168,32 @@ export default async function Home() {
             <div className="stat-cell">
               <span className="stat-label">Gone Quiet</span>
               <span className="stat-value amber">{stalled.length}</span>
+            </div>
+          </div>
+        )}
+
+        {builderSummary && (
+          <div className="card" style={{ marginBottom: 48 }}>
+            <div className="card-header">Builder performance overview</div>
+            <div className="card-body">
+              <p style={{ lineHeight: 1.6, margin: 0 }}>{builderSummary}</p>
+              {builderSummaryAt && (
+                <p
+                  style={{
+                    marginTop: 16,
+                    paddingTop: 12,
+                    borderTop: "1px solid var(--border)",
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    fontFamily: "IBM Plex Mono, monospace",
+                  }}
+                >
+                  Updated {new Date(builderSummaryAt).toLocaleDateString()}
+                  {builderSummaryCount != null &&
+                    ` · based on ${builderSummaryCount} scored builds`}
+                  {" · refresh in admin"}
+                </p>
+              )}
             </div>
           </div>
         )}

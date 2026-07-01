@@ -30,6 +30,34 @@ export async function initDb() {
   try { await sql`ALTER TABLE verdicts ADD COLUMN IF NOT EXISTS linked_repo_override TEXT`; } catch {}
   try { await sql`ALTER TABLE verdicts ADD COLUMN IF NOT EXISTS evidence_commits TEXT`; } catch {}
   try { await sql`ALTER TABLE verdicts ADD COLUMN IF NOT EXISTS implementation_type TEXT DEFAULT 'standalone'`; } catch {}
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS dashboard_meta (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      builder_summary TEXT,
+      summary_scored_count INTEGER,
+      updated_at TIMESTAMPTZ
+    )
+  `;
+}
+
+export async function getBuilderSummary() {
+  const { rows } = await sql`
+    SELECT builder_summary, summary_scored_count, updated_at
+    FROM dashboard_meta WHERE id = 1
+  `;
+  return rows[0] || null;
+}
+
+export async function setBuilderSummary(summary: string, scoredCount: number) {
+  await sql`
+    INSERT INTO dashboard_meta (id, builder_summary, summary_scored_count, updated_at)
+    VALUES (1, ${summary}, ${scoredCount}, NOW())
+    ON CONFLICT (id) DO UPDATE SET
+      builder_summary = EXCLUDED.builder_summary,
+      summary_scored_count = EXCLUDED.summary_scored_count,
+      updated_at = NOW()
+  `;
 }
 
 export async function upsertVerdict(data: {
