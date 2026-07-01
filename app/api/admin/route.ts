@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { initDb, setManualStatus, setRepoOverride } from "@/lib/db";
+import { initDb, setManualStatus, setRepoOverride, setEvidenceCommits } from "@/lib/db";
 import { scoreIdea } from "@/lib/scoreIdea";
 
 export async function POST(request: NextRequest) {
   try {
     await initDb();
-    const { ideaId, manualStatus, repoOverride } = await request.json();
+    const { ideaId, manualStatus, repoOverride, evidenceCommits } =
+      await request.json();
 
     if (!ideaId) {
       return NextResponse.json({ error: "ideaId required" }, { status: 400 });
@@ -20,6 +21,11 @@ export async function POST(request: NextRequest) {
 
     if (repoOverride !== undefined) {
       await setRepoOverride(ideaId, repoOverride);
+      shouldRescore = true;
+    }
+
+    if (evidenceCommits !== undefined) {
+      await setEvidenceCommits(ideaId, evidenceCommits);
       shouldRescore = true;
     }
 

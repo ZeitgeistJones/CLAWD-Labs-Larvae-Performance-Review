@@ -16,6 +16,7 @@ interface Verdict {
   last_commit_days: number | null;
   larvae_consensus: string | null;
   manual_status: string | null;
+  implementation_type: string | null;
 }
 
 interface Idea {
@@ -161,7 +162,11 @@ export default async function Home() {
                       <StatusBadges idea={idea} />
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
                       {idea.verdict?.linked_repo && (
-                        <span className="cv-tag">{idea.verdict.linked_repo}</span>
+                        <span className="cv-tag">
+                          {idea.verdict.implementation_type === "nested"
+                            ? `nested · ${idea.verdict.linked_repo}`
+                            : idea.verdict.linked_repo}
+                        </span>
                       )}
                       {idea.verdict?.last_commit_days !== null && idea.verdict?.last_commit_days !== undefined && (
                         <span className="cv-tag">last commit {idea.verdict.last_commit_days}d ago</span>
@@ -196,7 +201,11 @@ export default async function Home() {
                       <StatusBadges idea={idea} />
                       <span className="cv-tag"><span>{formatCV(idea.total_cv)}</span> CV staked</span>
                       {idea.verdict?.linked_repo && (
-                        <span className="cv-tag">{idea.verdict.linked_repo}</span>
+                        <span className="cv-tag">
+                          {idea.verdict.implementation_type === "nested"
+                            ? `nested · ${idea.verdict.linked_repo}`
+                            : idea.verdict.linked_repo}
+                        </span>
                       )}
                       {idea.verdict?.last_commit_days !== null && idea.verdict?.last_commit_days !== undefined && (
                         <span className="cv-tag">last commit {idea.verdict.last_commit_days}d ago</span>

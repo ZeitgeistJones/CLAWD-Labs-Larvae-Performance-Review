@@ -23,14 +23,24 @@ export async function scoreAlignment(
   larvaeConsensus: string,
   repoDescription: string,
   recentCommitMessages: string[],
-  readmeExcerpt: string
+  readmeExcerpt: string,
+  options?: { nested?: boolean; contextNote?: string }
 ): Promise<AlignmentResult> {
   const commitList = recentCommitMessages.slice(0, 5).join("\n- ");
   const consensusTrimmed = larvaeConsensus.slice(0, 1500);
-  const readmeTrimmed = readmeExcerpt ? readmeExcerpt.slice(0, 600) : "No README found";
+  const nested = options?.nested ?? false;
+  const readmeTrimmed = nested
+    ? "Not used — nested implementation; see evidence commits only."
+    : readmeExcerpt
+      ? readmeExcerpt.slice(0, 600)
+      : "No README found";
+
+  const nestedNote = nested
+    ? `\nIMPORTANT CONTEXT: ${options?.contextNote || "This labs idea was implemented inside an existing larger repo, not as its own project. Score ONLY whether the evidence commits deliver what the larvae asked for. Do not penalize for unrelated repo scope or missing standalone README."}\n`
+    : "";
 
   const prompt = `You are scoring how well a shipped build matches what the CLAWD community's AI larva agents asked for.
-
+${nestedNote}
 WHAT THE LARVAE CONSENSUS SAID:
 ${consensusTrimmed}
 
@@ -39,8 +49,8 @@ Title: ${ideaTitle}
 Description: ${ideaDescription.slice(0, 500)}
 
 WHAT ACTUALLY SHIPPED:
-Repo description: ${repoDescription || "No description provided"}
-Recent commit messages:
+Repo description: ${nested ? "(parent repo — may describe the whole product, not just this labs idea)" : repoDescription || "No description provided"}
+Evidence commit messages:
 - ${commitList || "No commits found"}
 README excerpt:
 ${readmeTrimmed}

@@ -4,6 +4,12 @@ import {
   fetchRepoReadme,
   daysSince,
 } from "@/lib/data";
+import {
+  fetchEvidenceCommits,
+  formatCommitEvidenceForPrompt,
+  parseEvidenceCommits,
+  type CommitEvidence,
+} from "@/lib/commits";
 import { resolveLinkedRepo } from "@/lib/matching";
 import { getReviewStatus } from "@/lib/status";
 import { scoreAlignment } from "@/lib/scoring";
@@ -53,31 +59,52 @@ export async function scoreIdea(
   const consensus = idea.aggregated_opinion || "";
   const consensusShort = idea.aggregated_opinion_short || "";
   const repoOverride = existing?.linked_repo_override || null;
+  const evidenceCommitsRaw = existing?.evidence_commits || "";
+  const isNested = parseEvidenceCommits(evidenceCommitsRaw).length > 0;
 
   const { repo: linkedRepo } = await resolveLinkedRepo(idea.title, repoOverride);
 
-  let commits: { commit: { message: string; committer: { date: string } } }[] =
-    [];
+  let evidenceCommitDetails: CommitEvidence[] = [];
+  let commitMessages: string[] = [];
   let readme = "";
   let lastCommitDays: number | null = null;
   let isStalled = false;
+  let nestedContextNote: string | undefined;
 
   if (linkedRepo) {
-    commits = await fetchRepoCommits(linkedRepo.name);
-    readme = await fetchRepoReadme(linkedRepo.name);
+    if (isNested) {
+      evidenceCommitDetails = await fetchEvidenceCommits(
+        linkedRepo.name,
+        evidenceCommitsRaw
+      );
+      const formatted = formatCommitEvidenceForPrompt(
+        linkedRepo.name,
+        evidenceCommitDetails
+      );
+      commitMessages = formatted.commitMessages;
+      nestedContextNote = formatted.contextNote;
 
-    if (commits.length > 0) {
-      lastCommitDays = daysSince(commits[0].commit.committer.date);
-      isStalled = lastCommitDays > STALE_DAYS;
-    } else if (linkedRepo.pushed_at || linkedRepo.updated_at) {
-      lastCommitDays = daysSince(linkedRepo.pushed_at || linkedRepo.updated_at);
-      isStalled = lastCommitDays > STALE_DAYS;
+      if (evidenceCommitDetails.length > 0) {
+        const newest = evidenceCommitDetails.reduce((a, b) =>
+          new Date(a.date) > new Date(b.date) ? a : b
+        );
+        lastCommitDays = daysSince(newest.date);
+        isStalled = lastCommitDays > STALE_DAYS;
+      }
+    } else {
+      const commits = await fetchRepoCommits(linkedRepo.name);
+      readme = await fetchRepoReadme(linkedRepo.name);
+      commitMessages = commits.map((c) => c.commit.message.split("\n")[0]);
+
+      if (commits.length > 0) {
+        lastCommitDays = daysSince(commits[0].commit.committer.date);
+        isStalled = lastCommitDays > STALE_DAYS;
+      } else if (linkedRepo.pushed_at || linkedRepo.updated_at) {
+        lastCommitDays = daysSince(linkedRepo.pushed_at || linkedRepo.updated_at);
+        isStalled = lastCommitDays > STALE_DAYS;
+      }
     }
   }
-
-  const commitMessages = commits.map(
-    (c) => c.commit.message.split("\n")[0]
-  );
 
   const reviewStatus = getReviewStatus(
     { status: idea.status, archived: idea.archived },
@@ -89,7 +116,10 @@ export async function scoreIdea(
   );
 
   const hasEvidence =
-    !!linkedRepo && (commitMessages.length > 0 || readme.length > 0);
+    !!linkedRepo &&
+    (isNested
+      ? evidenceCommitDetails.length > 0
+      : commitMessages.length > 0 || readme.length > 0);
 
   let score: number | null = refreshGitHubOnly
     ? (existing?.score ?? null)
@@ -115,13 +145,20 @@ export async function scoreIdea(
         consensus,
         linkedRepo?.description || "",
         commitMessages,
-        readme
+        readme,
+        isNested
+          ? { nested: true, contextNote: nestedContextNote }
+          : undefined
       );
       score = result.score;
       primaryScore = result.primary_score;
       secondaryScore = result.secondary_score;
       alignmentSummary = result.alignment_summary;
       qualityNotes = result.quality_notes;
+    } else if (isNested) {
+      alignmentSummary =
+        "Evidence commits could not be fetched — check commit SHAs/URLs and repo name.";
+      qualityNotes = null;
     } else {
       alignmentSummary = linkedRepo
         ? "Repo linked but no commits or README found — check the repo name or GitHub access."
@@ -143,6 +180,8 @@ export async function scoreIdea(
     linked_repo: linkedRepo?.name || null,
     repo_url: linkedRepo?.html_url || null,
     linked_repo_override: repoOverride,
+    evidence_commits: evidenceCommitsRaw || null,
+    implementation_type: isNested ? "nested" : "standalone",
     last_commit_days: lastCommitDays,
     is_stalled: isStalled,
     larvae_consensus: consensusShort || consensus?.slice(0, 500) || null,

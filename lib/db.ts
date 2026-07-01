@@ -28,6 +28,8 @@ export async function initDb() {
 
   try { await sql`ALTER TABLE verdicts ADD COLUMN IF NOT EXISTS manual_status TEXT`; } catch {}
   try { await sql`ALTER TABLE verdicts ADD COLUMN IF NOT EXISTS linked_repo_override TEXT`; } catch {}
+  try { await sql`ALTER TABLE verdicts ADD COLUMN IF NOT EXISTS evidence_commits TEXT`; } catch {}
+  try { await sql`ALTER TABLE verdicts ADD COLUMN IF NOT EXISTS implementation_type TEXT DEFAULT 'standalone'`; } catch {}
 }
 
 export async function upsertVerdict(data: {
@@ -43,6 +45,8 @@ export async function upsertVerdict(data: {
   linked_repo: string | null;
   repo_url: string | null;
   linked_repo_override?: string | null;
+  evidence_commits?: string | null;
+  implementation_type?: string | null;
   last_commit_days: number | null;
   is_stalled: boolean;
   larvae_consensus: string | null;
@@ -54,13 +58,16 @@ export async function upsertVerdict(data: {
     INSERT INTO verdicts (
       idea_id, idea_title, score, primary_score, secondary_score,
       alignment_summary, quality_notes, stall_reason, stall_confidence,
-      linked_repo, repo_url, linked_repo_override, last_commit_days, is_stalled,
+      linked_repo, repo_url, linked_repo_override, evidence_commits, implementation_type,
+      last_commit_days, is_stalled,
       larvae_consensus, idea_status, manual_status, total_cv, scored_at, updated_at
     ) VALUES (
       ${data.idea_id}, ${data.idea_title}, ${data.score}, ${data.primary_score},
       ${data.secondary_score}, ${data.alignment_summary}, ${data.quality_notes},
       ${data.stall_reason}, ${data.stall_confidence}, ${data.linked_repo},
-      ${data.repo_url}, ${data.linked_repo_override || null}, ${data.last_commit_days},
+      ${data.repo_url}, ${data.linked_repo_override || null},
+      ${data.evidence_commits || null}, ${data.implementation_type || "standalone"},
+      ${data.last_commit_days},
       ${data.is_stalled}, ${data.larvae_consensus}, ${data.idea_status},
       ${data.manual_status || null}, ${data.total_cv}, NOW(), NOW()
     )
@@ -75,6 +82,8 @@ export async function upsertVerdict(data: {
       linked_repo = EXCLUDED.linked_repo,
       repo_url = EXCLUDED.repo_url,
       linked_repo_override = COALESCE(EXCLUDED.linked_repo_override, verdicts.linked_repo_override),
+      evidence_commits = COALESCE(EXCLUDED.evidence_commits, verdicts.evidence_commits),
+      implementation_type = COALESCE(EXCLUDED.implementation_type, verdicts.implementation_type),
       last_commit_days = EXCLUDED.last_commit_days,
       is_stalled = EXCLUDED.is_stalled,
       larvae_consensus = EXCLUDED.larvae_consensus,
@@ -91,6 +100,21 @@ export async function setManualStatus(ideaId: number, manualStatus: string) {
     VALUES (${ideaId}, ${`Idea #${ideaId}`}, ${manualStatus}, 'pending', 0, NOW())
     ON CONFLICT (idea_id) DO UPDATE SET
       manual_status = ${manualStatus},
+      score = NULL,
+      primary_score = NULL,
+      secondary_score = NULL,
+      alignment_summary = NULL,
+      quality_notes = NULL,
+      updated_at = NOW()
+  `;
+}
+
+export async function setEvidenceCommits(ideaId: number, evidenceCommits: string) {
+  await sql`
+    INSERT INTO verdicts (idea_id, idea_title, evidence_commits, idea_status, total_cv, updated_at)
+    VALUES (${ideaId}, ${`Idea #${ideaId}`}, ${evidenceCommits}, 'pending', 0, NOW())
+    ON CONFLICT (idea_id) DO UPDATE SET
+      evidence_commits = ${evidenceCommits},
       score = NULL,
       primary_score = NULL,
       secondary_score = NULL,

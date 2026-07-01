@@ -5,18 +5,22 @@ import { statusLabel } from "@/lib/status";
 
 const STATUSES = ["idea", "building", "shipped", "stalled", "archived"];
 
+interface VerdictFields {
+  manual_status: string | null;
+  score: number | null;
+  linked_repo: string | null;
+  linked_repo_override: string | null;
+  evidence_commits: string | null;
+  implementation_type: string | null;
+}
+
 interface Idea {
   id: number;
   title: string;
   status: string;
   total_cv: number;
   archived: boolean;
-  verdict: {
-    manual_status: string | null;
-    score: number | null;
-    linked_repo: string | null;
-    linked_repo_override: string | null;
-  } | null;
+  verdict: VerdictFields | null;
 }
 
 function formatCV(cv: number): string {
@@ -25,23 +29,46 @@ function formatCV(cv: number): string {
   return String(cv);
 }
 
+function verdictFromResponse(
+  data: { verdict?: Record<string, unknown> },
+  fallback: VerdictFields | null
+): VerdictFields {
+  const v = data.verdict;
+  return {
+    manual_status: (v?.manual_status as string) ?? fallback?.manual_status ?? null,
+    score: (v?.score as number) ?? fallback?.score ?? null,
+    linked_repo: (v?.linked_repo as string) ?? fallback?.linked_repo ?? null,
+    linked_repo_override:
+      (v?.linked_repo_override as string) ?? fallback?.linked_repo_override ?? null,
+    evidence_commits:
+      (v?.evidence_commits as string) ?? fallback?.evidence_commits ?? null,
+    implementation_type:
+      (v?.implementation_type as string) ?? fallback?.implementation_type ?? null,
+  };
+}
+
 export default function AdminPage() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<number | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
   const [repoInputs, setRepoInputs] = useState<Record<number, string>>({});
+  const [evidenceInputs, setEvidenceInputs] = useState<Record<number, string>>({});
 
   useEffect(() => {
     fetch("/api/labs")
       .then((r) => r.json())
       .then((data) => {
         setIdeas(data.ideas || []);
-        const inputs: Record<number, string> = {};
+        const repos: Record<number, string> = {};
+        const evidence: Record<number, string> = {};
         for (const idea of data.ideas || []) {
-          inputs[idea.id] = idea.verdict?.linked_repo_override || idea.verdict?.linked_repo || "";
+          repos[idea.id] =
+            idea.verdict?.linked_repo_override || idea.verdict?.linked_repo || "";
+          evidence[idea.id] = idea.verdict?.evidence_commits || "";
         }
-        setRepoInputs(inputs);
+        setRepoInputs(repos);
+        setEvidenceInputs(evidence);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -59,18 +86,7 @@ export default function AdminPage() {
       setIdeas((prev) =>
         prev.map((i) =>
           i.id === ideaId
-            ? {
-                ...i,
-                verdict: {
-                  manual_status: manualStatus,
-                  score: data.verdict?.score ?? i.verdict?.score ?? null,
-                  linked_repo: data.verdict?.linked_repo ?? i.verdict?.linked_repo ?? null,
-                  linked_repo_override:
-                    data.verdict?.linked_repo_override ??
-                    i.verdict?.linked_repo_override ??
-                    null,
-                },
-              }
+            ? { ...i, verdict: verdictFromResponse(data, i.verdict) }
             : i
         )
       );
@@ -92,27 +108,45 @@ export default function AdminPage() {
         body: JSON.stringify({ ideaId, repoOverride: repoInputs[ideaId] || "" }),
       });
       const data = await res.json();
-      if (data.verdict) {
-        setIdeas((prev) =>
-          prev.map((i) =>
-            i.id === ideaId
-              ? {
-                  ...i,
-                  verdict: {
-                    manual_status: data.verdict.manual_status ?? i.verdict?.manual_status ?? null,
-                    score: data.verdict.score ?? null,
-                    linked_repo: data.verdict.linked_repo ?? null,
-                    linked_repo_override: data.verdict.linked_repo_override ?? null,
-                  },
-                }
-              : i
-          )
-        );
-      }
+      setIdeas((prev) =>
+        prev.map((i) =>
+          i.id === ideaId
+            ? { ...i, verdict: verdictFromResponse(data, i.verdict) }
+            : i
+        )
+      );
       setSaved(ideaId);
       setTimeout(() => setSaved(null), 2000);
     } catch {
       alert("Failed to save repo");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const saveEvidence = async (ideaId: number) => {
+    setSaving(ideaId);
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ideaId,
+          evidenceCommits: evidenceInputs[ideaId] || "",
+        }),
+      });
+      const data = await res.json();
+      setIdeas((prev) =>
+        prev.map((i) =>
+          i.id === ideaId
+            ? { ...i, verdict: verdictFromResponse(data, i.verdict) }
+            : i
+        )
+      );
+      setSaved(ideaId);
+      setTimeout(() => setSaved(null), 2000);
+    } catch {
+      alert("Failed to save evidence commits");
     } finally {
       setSaving(null);
     }
@@ -132,8 +166,8 @@ export default function AdminPage() {
         <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Status & Repo Override</h1>
           <p style={{ fontSize: 13, color: "#888" }}>
-            Set review status and link the GitHub repo. Saving auto-runs scoring when review status is shipped.
-            Community status comes from larv.ai (read-only here).
+            Set review status and link the GitHub repo. For labs work inside an existing repo,
+            paste the commit SHA(s) or URL(s) that implemented the idea. Saving auto-rescores.
           </p>
         </div>
 
@@ -177,13 +211,18 @@ export default function AdminPage() {
                         linked: {idea.verdict.linked_repo}
                       </span>
                     )}
+                    {idea.verdict?.implementation_type === "nested" && (
+                      <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "#888", background: "#181818", border: "1px solid #333", padding: "2px 6px", borderRadius: 3 }}>
+                        nested
+                      </span>
+                    )}
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#555", flexShrink: 0 }}>repo:</span>
                     <input
                       type="text"
-                      placeholder="exact-repo-name (e.g. clawdETH)"
+                      placeholder="exact-repo-name (e.g. clawdviction)"
                       value={repoInputs[idea.id] || ""}
                       onChange={(e) => setRepoInputs((prev) => ({ ...prev, [idea.id]: e.target.value }))}
                       style={{ flex: 1, background: "#181818", border: "1px solid #333", color: "#e8e8e8", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, padding: "6px 10px", borderRadius: 4, outline: "none" }}
@@ -195,13 +234,28 @@ export default function AdminPage() {
                     >
                       Save
                     </button>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#555" }}>{formatCV(idea.total_cv)} CV</span>
-                      {idea.archived && <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 10, color: "#555", background: "#181818", border: "1px solid #242424", padding: "2px 6px", borderRadius: 3 }}>archived</span>}
-                      {idea.verdict?.score !== null && idea.verdict?.score !== undefined && (
-                        <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#22c55e" }}>score: {idea.verdict.score}</span>
-                      )}
-                    </div>
+                    <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#555" }}>{formatCV(idea.total_cv)} CV</span>
+                    {idea.verdict?.score !== null && idea.verdict?.score !== undefined && (
+                      <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#22c55e" }}>score: {idea.verdict.score}</span>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#555", flexShrink: 0 }}>evidence:</span>
+                    <input
+                      type="text"
+                      placeholder="commit SHA or github.com/.../commit/..."
+                      value={evidenceInputs[idea.id] || ""}
+                      onChange={(e) => setEvidenceInputs((prev) => ({ ...prev, [idea.id]: e.target.value }))}
+                      style={{ flex: 1, background: "#181818", border: "1px solid #333", color: "#e8e8e8", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, padding: "6px 10px", borderRadius: 4, outline: "none" }}
+                    />
+                    <button
+                      onClick={() => saveEvidence(idea.id)}
+                      disabled={saving === idea.id}
+                      style={{ background: "#333", border: "1px solid #444", color: "#e8e8e8", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, padding: "6px 14px", borderRadius: 4, cursor: "pointer", letterSpacing: "0.04em", flexShrink: 0 }}
+                    >
+                      Save
+                    </button>
                   </div>
                 </div>
               );

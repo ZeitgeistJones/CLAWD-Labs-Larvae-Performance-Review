@@ -9,6 +9,7 @@ import {
   statusLabel,
   statusBadgeClass,
 } from "@/lib/status";
+import { parseEvidenceCommits } from "@/lib/commits";
 
 interface Verdict {
   idea_id: number;
@@ -21,6 +22,8 @@ interface Verdict {
   linked_repo: string | null;
   linked_repo_override: string | null;
   repo_url: string | null;
+  evidence_commits: string | null;
+  implementation_type: string | null;
   last_commit_days: number | null;
   is_stalled: boolean;
   larvae_consensus: string | null;
@@ -131,6 +134,10 @@ export default function IdeaPage({
     ideaData?.aggregated_opinion;
   const totalCV = verdict?.total_cv || ideaData?.total_cv || 0;
   const repoName = verdict?.linked_repo_override || verdict?.linked_repo;
+  const isNested = verdict?.implementation_type === "nested";
+  const evidenceShas = verdict?.evidence_commits
+    ? parseEvidenceCommits(verdict.evidence_commits)
+    : [];
 
   return (
     <>
@@ -168,7 +175,7 @@ export default function IdeaPage({
                 rel="noopener noreferrer"
                 className="repo-link"
               >
-                ↗ {repoName}
+                ↗ {isNested ? `nested in ${repoName}` : repoName}
               </a>
             )}
           </div>
@@ -210,6 +217,31 @@ export default function IdeaPage({
                   <div className="card-header">Original idea</div>
                   <div className="card-body">
                     <p>{ideaData.description}</p>
+                  </div>
+                </div>
+              )}
+
+              {isNested && evidenceShas.length > 0 && (
+                <div className="card">
+                  <div className="card-header">Evidence commits</div>
+                  <div className="card-body">
+                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+                      This labs idea shipped inside an existing repo. Scoring uses only these commits.
+                    </p>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+                      {evidenceShas.map((sha) => (
+                        <li key={sha} style={{ marginBottom: 6 }}>
+                          <a
+                            href={`https://github.com/clawdbotatg/${repoName}/commit/${sha}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: "var(--clawd)", fontFamily: "IBM Plex Mono, monospace", fontSize: 12 }}
+                          >
+                            {sha.slice(0, 7)}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
               )}
