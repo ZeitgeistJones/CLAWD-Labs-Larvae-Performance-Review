@@ -25,7 +25,7 @@ function titleCandidates(title: string): string[] {
   const candidates = new Set<string>([trimmed]);
   const slug = normalizeSlug(trimmed);
   if (slug) candidates.add(slug);
-  return [...candidates];
+  return Array.from(candidates);
 }
 
 export async function resolveLinkedRepo(
